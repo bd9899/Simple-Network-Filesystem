@@ -12,6 +12,7 @@
 #include <sys/sendfile.h>
 #include <pthread.h>
 
+int numClients;
 
 int main(int argc, char **argv){
 
@@ -41,7 +42,50 @@ int main(int argc, char **argv){
     //mount path is a local variable for now, can change to global later
     char* mount_path = (char*)malloc(strlen(argv[4])+1);
     strcpy(mount_path, argv[4]);
-    
+
+    struct addrinfo hints;
+    struct addrinfo *server;
+    memset(&hints,0 ,sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    //make socket
+    int socketFD;
+    socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    if(socketFileDes < 0){
+        //ERRNO HERE
+        printf("ERROR CODE: %s\n",strerror(errno));
+        return -1;
+    }
+
+    //bind socket
+    if(bind(socketFileDes, server->ai_addr, server->ai_addrlen) == -1){
+        //ERRNO HERE
+        printf("ERROR CODE: %s\n",strerror(errno));
+        return -1;
+    }
+
+    //Listen to socket
+    if(listen(socketFileDes, 10) < 0){
+        //ERRNO HERE
+        printf("ERROR CODE: %s\n",strerror(errno));
+        return -1;
+    }
+
+    //handle requests
+    numClients = 0;
+    while(1){
+        int accSockFD = accept(socketFileDes, server->ai_addr, &server->ai_addrlen);
+        int * clientSock = (int*)calloc(1,sizeof(int));
+        *clientSock = accSockFD;
+
+        //spawn thread to take care of client request
+        if(numClients < 10){
+            pthread_t newThread;
+            pthread_create(&newThread, NULL, HANDLINGMETHODHERE, (void *)clientSock);
+            numClients++;
+        }
+    }
     
 }
 
