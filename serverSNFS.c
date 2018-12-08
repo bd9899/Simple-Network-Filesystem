@@ -90,10 +90,14 @@ int server_write(int sock_fd, char* args,size_t nbytes) {
     return 0;
 }
 
-int server_open(int sock_fd, char* args, int oflags) {
+int server_create(int sock_fd, char* args) {
     char* path = before_substring(&args, TOKEN);
-    if (access(path, F_OK) != 0) {
-        return -1;
+    if (access(path, F_OK) == 0) {
+        return 0;
+    }
+    else {
+        int i;
+        i = open(path, O_RDONLY);
     }
     return 0;
 }
