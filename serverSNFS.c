@@ -78,6 +78,18 @@ int server_releasedir(DIR *dp) {
     return 0;
 }
 
+int server_write(int sock_fd, char* args,size_t nbytes) {
+    char* path = before_substring(*args, TOKEN);
+    char* buffer = (char*)malloc(nbytes +1);
+    if (access(path, W_OK) != 0) {
+        return -1;
+    }
+    int i; 
+    i = open(path, O_WRONLY);
+    pwrite(i, buffer, nbytes);
+    return 0;
+}
+
 int main(int argc, char **argv){
 
     if (argc == 5) {
