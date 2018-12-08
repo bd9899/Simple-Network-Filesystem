@@ -14,6 +14,70 @@
 
 int numClients;
 
+int server_open(int sock_fd, char* args, int oflags) {
+    char* path = before_substring(&args, TOKEN);
+    if (access(path, F_OK) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int server_read(int sock_fd, char* args, size_t nbytes) {
+    char* path = before_substring(*args, TOKEN);
+    char* buffer = (char*)malloc(nbytes +1);
+    if (access(path, R_OK) != 0) {
+        return -1;
+    }
+    int i; 
+    i = open(path, O_RDONLY);
+    read(i, buffer, nbytes);
+
+    if (write_sock(sock_fd,buffer) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int server_truncate(int sock_fd, char* args, off_t length) {
+    char* path = before_substring(&args, TOKEN);
+    if (truncate(path, length) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int server_opendir(int sock_fd, char* args) {
+    char* path = before_substring(&args, TOKEN);
+    if (access(path, F_OK | R_OK) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int server_readdir(int sock_fd, char* args) {
+    char* path = before_substring(&args, TOKEN);
+
+    DIR *dp;
+    struct dirent *de;
+
+    dp = opendir(path);
+    if (dp == NULL) {
+        return -1;
+    }
+
+    while ((de = readdir(dp)) != NULL) {
+        //
+    }
+
+    return 0;
+}
+
+int server_releasedir(DIR *dp) {
+    closedir(dp);
+    return 0;
+}
+
 int main(int argc, char **argv){
 
     if (argc == 5) {
