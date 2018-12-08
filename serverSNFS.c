@@ -90,6 +90,26 @@ int server_write(int sock_fd, char* args,size_t nbytes) {
     return 0;
 }
 
+int server_open(int sock_fd, char* args, int oflags) {
+    char* path = before_substring(&args, TOKEN);
+    if (access(path, F_OK) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int server_mkdir(int sock_fd, char* args) {
+    char* path = before_substring(&args, TOKEN);
+    if (access(path, F_OK) == 0) {
+        return 0;
+    }
+    else {
+        DIR *dp;
+        dp = opendir(path);
+    }
+    return 0;
+}
+
 int main(int argc, char **argv){
 
     if (argc == 5) {
