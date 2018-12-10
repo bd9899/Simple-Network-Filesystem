@@ -1,6 +1,6 @@
 #define FUSE_USE_VERSION 26
 #define BUFFER_SIZE 1024
-#define TOKEN ":;~^6991^~;:"
+#define TOKEN ":6991:"
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -91,7 +91,9 @@ int connect_to_socket(){
             freeaddrinfo(address);
             return -1;
     }
-    freeaddrinfo(address);
+    if(address != NULL){
+        freeaddrinfo(address);
+    }
     printf("Successfully connected to socket\n");
     return sock_fd;
 }
@@ -221,7 +223,14 @@ static int client_getattr(const char *path, struct stat *st){
    
     memset(st, 0, sizeof(struct stat));
     
-    
+    //error using stat() on server
+    if(server_st->st_gid == '!'){
+        errno = server_st->st_dev;
+        free(data);
+        free(buffer);
+        return -errno;
+    }
+
     st->st_mode = server_st->st_mode;
     st->st_uid = server_st->st_uid;
     st->st_gid = server_st->st_gid;
@@ -242,11 +251,12 @@ static int client_getattr(const char *path, struct stat *st){
 }
 
 static int client_create(const char *path, mode_t mode, struct fuse_file_info *fi){
-    printf("In %s\n", __func__);
+    printf("In %s, %u\n", __func__, mode);
     
     int sock_fd;
     char* buf;
     char* result;
+    //char* actual_path = before_substring(&path, ".swp");
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
@@ -254,31 +264,40 @@ static int client_create(const char *path, mode_t mode, struct fuse_file_info *f
     }
     
     int modeDigits = lenHelper(mode);
+    printf("mode digits: %d\n", modeDigits);
+
     char *str_mode = (char*)malloc(modeDigits+1);
-    snprintf(str_mode, modeDigits+1, "%u", mode);
-    char *msg = (char*)malloc(strlen("create")+strlen(TOKEN)+strlen(path)+modeDigits+1);
+    sprintf(str_mode, "%u", mode);
+
+    char *msg = (char*)malloc(strlen("create")+strlen(TOKEN)+strlen(path)+strlen(TOKEN)+modeDigits+1);
     strcpy(msg, "create");
     strcat(msg, TOKEN);
     strcat(msg, path);
     strcat(msg, TOKEN);
     strcat(msg, str_mode);
-    free(str_mode);
+    //free(str_mode);
     
+    printf("CREATE MSG: %s\n", msg);
+    fflush(stdout);
     int res = write_sock(sock_fd, msg);
     if(res == -1){
         printf("%s\n", strerror(errno));
         res = -errno;
         return res;
     }
+
     
     //read from socket;
     if((buf = read_sock(sock_fd)) == NULL){
         close(sock_fd);
         printf("%s\n", strerror(errno));
+        //free(actual_path);
         return -errno;
     }
+
     close(sock_fd);
     result = before_substring(&buf, TOKEN);
+
     if(strcmp(result, "success") != 0){
         errno = atoi(result);
         printf("%s\n", strerror(errno));
@@ -286,6 +305,7 @@ static int client_create(const char *path, mode_t mode, struct fuse_file_info *f
     }else{
         res = 0;
     }
+    //free(actual_path);
     free(result);
     return res;
 }

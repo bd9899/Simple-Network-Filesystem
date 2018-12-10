@@ -15,7 +15,7 @@
 #include <dirent.h>
 
 #define BUFFER_SIZE 1024
-#define TOKEN ":;~^6991^~;:"
+#define TOKEN ":6991:"
 
 
 char *mount_path;
@@ -52,6 +52,19 @@ int write_stat_sock(int sock_fd, void* buffer){
     free(buffer);
     printf("Res: %d\n", res);
     return res;
+}
+
+int lenHelper(int x) {
+    if (x >= 1000000000) return 10;
+    if (x >= 100000000)  return 9;
+    if (x >= 10000000)   return 8;
+    if (x >= 1000000)    return 7;
+    if (x >= 100000)     return 6;
+    if (x >= 10000)      return 5;
+    if (x >= 1000)       return 4;
+    if (x >= 100)        return 3;
+    if (x >= 10)         return 2;
+    return 1;
 }
 
 
@@ -111,28 +124,22 @@ int server_getattr(int sock_fd, char* args){
     printf("PATH: %s\n", path);
     struct stat *st = (struct stat*)malloc(sizeof(struct stat));
     char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
-    void* buffer = malloc(sizeof(struct stat));
     
     strcpy(full_path, mount_path);
     strcat(full_path, path);
     printf("Full Path: %s\n", full_path);
     if(stat(full_path, st) != 0){
         printf("Stat Failed\n");
-        free(buffer);
-        free(full_path);
-        return -1;
-    }
-    printf("UID: %u\n",st->st_uid);
-    memcpy(buffer, (void*)st, sizeof(struct stat));
-    
-    if(write_stat_sock(sock_fd, buffer) == -1){
+        st->st_dev = errno;
+        st->st_gid = '!';
+    }    
+
+    if(write_stat_sock(sock_fd, (void*)st) == -1){
         free(full_path);
         return -1;
     }
     
-    free(st);
     free(full_path);
-    printf("line 134");
     return 0;
 }
 
@@ -251,7 +258,7 @@ int server_create(int sock_fd, char* args) {
     int file_fd;
     printf("PATH: %s\n", path);
     char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
-    char* buffer = NULL;
+    char* buffer;
     strcpy(full_path, mount_path);
     strcat(full_path, path);
     printf("Full Path: %s\n", full_path);
@@ -260,11 +267,16 @@ int server_create(int sock_fd, char* args) {
     mode_t mode = strtoul(mode_str, NULL, 10);
     
     file_fd = creat(full_path, mode);
+    printf("MODE: %u, file_fd: %d\n", mode, file_fd);
     if(file_fd == -1){
-        buffer = (char*)malloc(10);
+        int a = lenHelper(errno);
+        printf("LEN ERRNO: %d\n", a);
+        fflush(stdout);
+        buffer = malloc(a+1);
         sprintf(buffer, "%d", errno);
+        printf("Line 274: %s\n", strerror(errno));
     }else{
-        buffer = (char*)malloc(strlen("success")+1);
+        buffer = malloc(strlen("success")+1);
         strcpy(buffer, "success");
     }
     
