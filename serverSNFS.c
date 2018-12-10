@@ -11,8 +11,130 @@
 #include <fcntl.h>
 #include <sys/sendfile.h>
 #include <pthread.h>
+#include <errno.h>
+#include <dirent.h>
 
-int numClients;
+#define BUFFER_SIZE 1024
+#define TOKEN ":;~^6991^~;:"
+
+
+char *mount_path;
+
+char* before_substring(char** buffer, char* substring){
+    char *start = strstr(*buffer, substring);
+    char* ret;
+    if(start == NULL){
+        return NULL;
+    }else{
+        int len = 0;
+        char *ptr = *buffer;
+        while(ptr != start){
+            len++;
+            ptr++;
+        }
+        ret = (char*)malloc(len+1);
+        strncpy(ret, *buffer, len);
+        ret[len] = '\0';
+        *buffer = start;
+        *buffer += strlen(substring);
+        memset(start, 0, strlen(substring));
+        if(*buffer[0] == '\0'){
+            *buffer = NULL;
+        }
+        return ret;
+    }
+}
+
+int write_stat_sock(int sock_fd, void* buffer){
+    int res;
+    res = write(sock_fd, buffer, sizeof(struct stat));
+    fsync(sock_fd);
+    free(buffer);
+    printf("Res: %d\n", res);
+    return res;
+}
+
+
+int write_sock(int sock_fd, char* buffer){
+    int res;
+    char* newBuffer = (char*)malloc(strlen(buffer)+strlen(TOKEN)+1);
+    strcpy(newBuffer, buffer);
+    strcat(newBuffer, TOKEN);
+    
+    printf("BUFFER: %s\n", newBuffer);
+    res = write(sock_fd, newBuffer, strlen(newBuffer)+1);
+    fsync(sock_fd);
+    free(buffer);
+    free(newBuffer);
+    return res;
+}
+
+char* read_sock(int sock_fd){
+        
+    ssize_t res;
+
+    char *msg = NULL;
+    char *buffer = malloc(2);
+    while((res = read(sock_fd, buffer, 1))){
+        printf("res: %lu\n", res);
+        if (res == -1){
+            free(buffer);
+            if(msg != NULL){
+                free(msg);
+            }
+            printf("RES is -1\n");
+            return NULL;
+        }
+        buffer[res] = '\0';
+        printf("Buffer: %s-hi-\n", buffer);
+        if(buffer[0] == buffer[res]){
+            break;
+        }
+
+        if(msg == NULL){
+            msg = (char*)malloc(strlen(buffer)+1);
+            strcpy(msg, buffer);
+             
+        }
+        else{
+            msg = (char*)realloc(msg, strlen(msg)+strlen(buffer)+1);
+            strcat(msg, (char*)buffer);
+        }
+    }
+    printf("msg: %s\n",msg);
+    free(buffer);
+    return msg; 
+}
+
+int server_getattr(int sock_fd, char* args){
+    char* path = before_substring(&args, TOKEN);
+    printf("PATH: %s\n", path);
+    struct stat *st = (struct stat*)malloc(sizeof(struct stat));
+    char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
+    void* buffer = malloc(sizeof(struct stat));
+    
+    strcpy(full_path, mount_path);
+    strcat(full_path, path);
+    printf("Full Path: %s\n", full_path);
+    if(stat(full_path, st) != 0){
+        printf("Stat Failed\n");
+        free(buffer);
+        free(full_path);
+        return -1;
+    }
+    printf("UID: %u\n",st->st_uid);
+    memcpy(buffer, (void*)st, sizeof(struct stat));
+    
+    if(write_stat_sock(sock_fd, buffer) == -1){
+        free(full_path);
+        return -1;
+    }
+    
+    free(st);
+    free(full_path);
+    printf("line 134");
+    return 0;
+}
 
 int server_open(int sock_fd, char* args, int oflags) {
     char* path = before_substring(&args, TOKEN);
@@ -23,7 +145,7 @@ int server_open(int sock_fd, char* args, int oflags) {
 }
 
 int server_read(int sock_fd, char* args, size_t nbytes) {
-    char* path = before_substring(*args, TOKEN);
+    char* path = before_substring(&args, TOKEN);
     char* buffer = (char*)malloc(nbytes +1);
     if (access(path, R_OK) != 0) {
         return -1;
@@ -49,55 +171,105 @@ int server_truncate(int sock_fd, char* args, off_t length) {
 
 int server_opendir(int sock_fd, char* args) {
     char* path = before_substring(&args, TOKEN);
-    if (access(path, F_OK | R_OK) != 0) {
+    printf("PATH: %s\n", path);
+    char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
+    char* buffer;
+    
+    strcpy(full_path, mount_path);
+    strcat(full_path, path);
+    printf("Full Path: %s\n", full_path);
+    if (access(full_path, F_OK | R_OK) != 0) {
+        buffer = (char*)malloc(3);
+        strcpy(buffer, "no");
+    }else{
+        buffer = (char*)malloc(4);
+        strcpy(buffer, "yes");
+    }
+    
+    if(write_sock(sock_fd, buffer) < 0){
         return -1;
     }
     return 0;
 }
 
 int server_readdir(int sock_fd, char* args) {
+    printf("Args: %s\n", args);
     char* path = before_substring(&args, TOKEN);
-
+    printf("PATH: %s\n", path);
+    char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
+    char* buffer = NULL;
+    
+    strcpy(full_path, mount_path);
+    strcat(full_path, path);
+    printf("Full Path: %s\n", full_path);
     DIR *dp;
     struct dirent *de;
-
-    dp = opendir(path);
-    if (dp == NULL) {
+    dp = opendir(full_path);
+    while ((de = readdir(dp)) != NULL) {
+        if(buffer == NULL){
+           buffer = (char*)malloc(strlen(de->d_name)+1);
+           strcpy(buffer, de->d_name);
+        }else{
+            buffer = realloc(buffer, strlen(buffer)+strlen(TOKEN)+strlen(de->d_name)+1);
+            strcat(buffer, TOKEN);
+            strcat(buffer, de->d_name);
+        }
+    }
+    
+    closedir(dp);
+    printf("Buffer: %s\n", buffer);
+    if(buffer == NULL){
+        buffer = (char*)malloc(strlen("empty")+1);
+        strcpy(buffer, "empty");
+    }
+    if(write_sock(sock_fd, buffer) < 0){
         return -1;
     }
-
-    while ((de = readdir(dp)) != NULL) {
-        //
-    }
-
     return 0;
 }
 
-int server_releasedir(DIR *dp) {
-    closedir(dp);
+int server_releasedir(void* args) {
+
     return 0;
 }
 
 int server_write(int sock_fd, char* args,size_t nbytes) {
-    char* path = before_substring(*args, TOKEN);
-    char* buffer = (char*)malloc(nbytes +1);
-    if (access(path, W_OK) != 0) {
-        return -1;
-    }
-    int i; 
-    i = open(path, O_WRONLY);
-    pwrite(i, buffer, nbytes);
+//    char* path = before_substring(&args, TOKEN);
+//    char* buffer = (char*)malloc(nbytes +1);
+//    if (access(path, W_OK) != 0) {
+//        return -1;
+//    }
+//    int i; 
+//    i = open(path, O_WRONLY);
+//    pwrite(i, buffer, nbytes);
     return 0;
 }
 
 int server_create(int sock_fd, char* args) {
     char* path = before_substring(&args, TOKEN);
-    if (access(path, F_OK) == 0) {
-        return 0;
+    char* mode_str = before_substring(&args, TOKEN);
+    int file_fd;
+    printf("PATH: %s\n", path);
+    char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
+    char* buffer = NULL;
+    strcpy(full_path, mount_path);
+    strcat(full_path, path);
+    printf("Full Path: %s\n", full_path);
+    
+    sprintf(full_path, "%s%s", mount_path, full_path);
+    mode_t mode = strtoul(mode_str, NULL, 10);
+    
+    file_fd = creat(full_path, mode);
+    if(file_fd == -1){
+        buffer = (char*)malloc(10);
+        sprintf(buffer, "%d", errno);
+    }else{
+        buffer = (char*)malloc(strlen("success")+1);
+        strcpy(buffer, "success");
     }
-    else {
-        int i;
-        i = open(path, O_RDONLY);
+    
+    if(write_sock(sock_fd, buffer) < 0){
+        return -1;
     }
     return 0;
 }
@@ -112,6 +284,112 @@ int server_mkdir(int sock_fd, char* args) {
         dp = opendir(path);
     }
     return 0;
+}
+
+void* test(void *param){
+    int sock_fd = *((int*)param);
+    pthread_detach(pthread_self());
+    printf("Sock FD: %d\n", sock_fd);
+    char* msg = read_sock(sock_fd);
+    printf("MSG: %s\n", msg);
+    if(msg == NULL){
+        printf("Error reading from socket\n");
+        close(sock_fd);
+        pthread_exit(NULL);
+    }
+    //printf("Message: %s\n", msg);
+    char* token = before_substring(&msg, TOKEN);
+    printf("TOKEN: %s\n, MSG: %s\n", token, msg);
+
+    
+    if(strcmp(token, "create") == 0){
+        if(server_create(sock_fd, msg) != 0){
+            printf("Error in server create\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);
+    }
+    else if(strcmp(token, "getattr") == 0){
+        if(server_getattr(sock_fd, msg) != 0){
+            printf("Error in server getattr\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);
+    }
+    else if(strcmp(token, "open") == 0){
+        
+    }
+    else if(strcmp(token, "flush") == 0){
+        
+    }
+    else if(strcmp(token, "release") == 0){
+        
+    }
+    else if(strcmp(token, "read") == 0){
+        
+    }
+    else if(strcmp(token, "truncate") == 0){
+        
+    }
+    else if(strcmp(token, "opendir") == 0){
+        if(server_opendir(sock_fd, msg) != 0){
+            printf("Error in server opendir\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);
+    }
+    else if(strcmp(token, "mkdir") == 0){
+        
+    }
+    else if(strcmp(token, "readdir") == 0){
+        if(server_readdir(sock_fd, msg) != 0){
+            printf("Error in server readdir\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);     
+    }
+    else if(strcmp(token, "releasedir") == 0){
+        
+    }
+    else if(strcmp(token, "write") == 0){
+        
+    }
+    else{
+        //write to socket that there was an error
+        char *buffer = (char*)malloc(strlen("error")+1);
+        strcpy(buffer, "error");
+        if(write_sock(sock_fd, buffer) == -1){
+            printf("Error writing to socket\n"); 
+        }
+        free(buffer);
+        free(token);
+              
+    }
+    close(sock_fd);
+    pthread_exit(NULL);
+}
+
+
+
+int valid_mount(char* mount){
+    DIR* dir = opendir(mount);
+    if (dir){
+        closedir(dir);
+        return 0;
+    }
+    else if (ENOENT == errno){
+        /* Directory does not exist. */
+        return -1;
+    }
+    else
+    {
+        /* opendir() failed for some other reason*/
+        return 1;
+    }
 }
 
 int main(int argc, char **argv){
@@ -140,54 +418,94 @@ int main(int argc, char **argv){
     int port = atoi(argv[2]);
     
     //mount path is a local variable for now, can change to global later
-    char* mount_path = (char*)malloc(strlen(argv[4])+1);
+    mount_path = (char*)malloc(strlen(argv[4])+1);
     strcpy(mount_path, argv[4]);
-
-    struct addrinfo hints;
-    struct addrinfo *server;
-    memset(&hints,0 ,sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    //make socket
-    int socketFD;
-    socketFD = socket(AF_INET, SOCK_STREAM, 0);
-    if(socketFileDes < 0){
-        //ERRNO HERE
-        printf("ERROR CODE: %s\n",strerror(errno));
-        return -1;
-    }
-
-    //bind socket
-    if(bind(socketFileDes, server->ai_addr, server->ai_addrlen) == -1){
-        //ERRNO HERE
-        printf("ERROR CODE: %s\n",strerror(errno));
-        return -1;
-    }
-
-    //Listen to socket
-    if(listen(socketFileDes, 10) < 0){
-        //ERRNO HERE
-        printf("ERROR CODE: %s\n",strerror(errno));
-        return -1;
-    }
-
-    //handle requests
-    numClients = 0;
-    while(1){
-        int accSockFD = accept(socketFileDes, server->ai_addr, &server->ai_addrlen);
-        int * clientSock = (int*)calloc(1,sizeof(int));
-        *clientSock = accSockFD;
-
-        //spawn thread to take care of client request
-        if(numClients < 10){
-            pthread_t newThread;
-            pthread_create(&newThread, NULL, HANDLINGMETHODHERE, (void *)clientSock);
-            numClients++;
-        }
+    printf("Mount: %s\n", mount_path);
+    
+    if(valid_mount(mount_path)){
+        printf("Mounting failed with the following error: %s\n", strerror(errno));
+        free(mount_path);
+        exit(1);
     }
     
+    
+    int check; // checks if function (getadd) worked
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);//IP4 - main socket
+    if(server_fd == -1){
+    	printf("socket creation error: %d\n", errno);
+    }       
+
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_ANY);//0
+
+
+    
+
+    //this code allows u to reuse port immediately after close
+    int optval = 10;
+    check = setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+
+    //bind using sockaddr
+    if (bind(server_fd, (struct sockaddr *) &address, sizeof(address)) != 0) {//bind to this
+        printf("bind()");
+        return 1;
+    }
+
+
+
+    if (listen(server_fd, 10) != 0) {//10 is queue size for waiting connections
+    	printf("listen()");
+    	exit(1);
+    }
+    
+
+    
+
+    pthread_t tid;
+    int newfd;
+    int *ptr;
+    
+    //printf("Press 'q' followed by enter at anytime to terminate server!\n");
+    printf("Received connections from: ");
+    fflush(stdout);
+    
+    char ipstr[INET6_ADDRSTRLEN];
+    bzero(ipstr, 50);		
+    struct sockaddr_in newAddr;
+    socklen_t newAddrSize = sizeof(newAddr);
+    
+    while(1){
+        if((newfd = accept(server_fd, NULL, NULL)) == -1){
+            printf("Accept Error: %d\n", errno);
+            continue;
+        }
+        
+        int err = getpeername(newfd, (struct sockaddr *) &newAddr, &newAddrSize);
+
+        if (err == 0) {
+            inet_ntop(AF_INET, &newAddr.sin_addr, ipstr, sizeof(ipstr));
+            printf("%s, ", ipstr);	
+            fflush(stdout);
+        }else{
+            printf("getpeername() error: %d\n", errno);
+        }
+
+        ptr = malloc(sizeof(int));
+        *ptr = newfd;
+        check = pthread_create(&tid, NULL, test, (void*)ptr);
+        
+        if(check){
+           printf("pthread_create error: %d\n", errno);
+        }
+
+    }
+
+    close(server_fd);
+    return 0;
 }
+
 
 
 
