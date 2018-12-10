@@ -46,7 +46,7 @@ char* before_substring(char** buffer, char* substring){
         *buffer += strlen(substring);
         memset(start, 0, strlen(substring));
         if(*buffer[0] == '\0'){
-            *buffer = NULL;
+            memset(*buffer, 0, 1);
         }
         return ret;
     }

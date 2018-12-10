@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -39,7 +40,7 @@ char* before_substring(char** buffer, char* substring){
         *buffer += strlen(substring);
         memset(start, 0, strlen(substring));
         if(*buffer[0] == '\0'){
-            *buffer = NULL;
+            memset(*buffer, 0, 1);
         }
         return ret;
     }
@@ -255,6 +256,9 @@ int server_write(int sock_fd, char* args,size_t nbytes) {
 int server_create(int sock_fd, char* args) {
     char* path = before_substring(&args, TOKEN);
     char* mode_str = before_substring(&args, TOKEN);
+    
+    int len = strlen(mode_str);
+    printf("MODE_STR lEN: %d\n", len);
     int file_fd;
     printf("PATH: %s\n", path);
     char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
@@ -263,18 +267,20 @@ int server_create(int sock_fd, char* args) {
     strcat(full_path, path);
     printf("Full Path: %s\n", full_path);
     
-    sprintf(full_path, "%s%s", mount_path, full_path);
     mode_t mode = strtoul(mode_str, NULL, 10);
     
     file_fd = creat(full_path, mode);
+    free(full_path);
     printf("MODE: %u, file_fd: %d\n", mode, file_fd);
     if(file_fd == -1){
         int a = lenHelper(errno);
+        int b = errno;
         printf("LEN ERRNO: %d\n", a);
         fflush(stdout);
         buffer = malloc(a+1);
-        sprintf(buffer, "%d", errno);
+        asprintf(&buffer, "%d", b);
         printf("Line 274: %s\n", strerror(errno));
+        fflush(stdout);
     }else{
         buffer = malloc(strlen("success")+1);
         strcpy(buffer, "success");
@@ -515,6 +521,10 @@ int main(int argc, char **argv){
     }
 
     close(server_fd);
+
+    // char *args = malloc(strlen("/tmp/server/hi.txt/:6991:2:6991:"));
+    // strcpy(args, "/tmp/server/hi.txt/:6991:2:6991:");
+    // int x = server_create(0, args);
     return 0;
 }
 
