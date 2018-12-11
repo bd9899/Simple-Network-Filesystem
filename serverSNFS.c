@@ -144,25 +144,35 @@ int server_getattr(int sock_fd, char* args){
 }
 
 int server_open(int sock_fd, char* args) {
+    int fd;
+    int flags;
     char* path = before_substring(&args, TOKEN);
+    char* flags_str = before_substring(&args, TOKEN);
+    //printf("PATH: %s\n", path);
     char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
     char* buffer;
-    
     strcpy(full_path, mount_path);
     strcat(full_path, path);
-    printf("Full Path: %s\n", full_path);
-    if (access(full_path, F_OK | R_OK) != 0) {
+    sscanf(flags_str, "%d", &flags);
+    free(flags_str);
+
+    if((fd = open(full_path, flags)) == -1){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
-
     }else{
-        buffer = malloc(strlen("success")+1);
-        strcpy(buffer, "success");
+        buffer = malloc(strlen("success")+strlen(TOKEN)+lenHelper(fd)+1);
+        // strcpy(buffer, "success");
+        sprintf(buffer, "%s%s%d", "success", TOKEN, fd);
     }
+
+    free(path);
+    free(full_path);
     
+
     if(write_sock(sock_fd, buffer) < 0){
         return -1;
     }
+    
     return 0;
 }
 
@@ -228,25 +238,21 @@ int server_opendir(int sock_fd, char* args) {
     int fd;
     char* path = before_substring(&args, TOKEN);
     printf("PATH: %s\n", path);
-    unsigned int access_bits;
     char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
     char* buffer;
-    struct stat st;
     strcpy(full_path, mount_path);
     strcat(full_path, path);
     DIR *dp;
 
     printf("Full Path: %s\n", full_path);
 
-    if(stat(full_path, &st) == -1){
+    if((dp = opendir(full_path)) == NULL){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
     }else{
-        dp = opendir(full_path);
         fd = dirfd(dp);
-        access_bits = st.st_mode;
-        buffer = malloc(strlen("success")+2*strlen(TOKEN) + lenHelper(access_bits) + lenHelper(fd)+1);
-        sprintf(buffer, "%s%s%u%s%d", "success", TOKEN, access_bits, TOKEN, fd);
+        buffer = malloc(strlen("success")+strlen(TOKEN)+lenHelper(fd)+1);
+        sprintf(buffer, "%s%s%d", "success", TOKEN, fd);
     }
 
     if(write_sock(sock_fd, buffer) < 0){
@@ -297,21 +303,10 @@ int server_readdir(int sock_fd, char* args) {
 
 int server_release(int sock_fd, char* args){
     int fd;
-    int ret;
     char* buffer;
     char* fd_str = before_substring(&args, TOKEN);
-    char* flush_str = before_substring(&args, TOKEN);
     sscanf(fd_str, "%d", &fd);
 
-    if(strcmp("1", flush_str) == 0){
-        if(fsync(fd) == -1){
-            buffer = malloc(lenHelper(errno)+1);
-            sprintf(buffer, "%d", errno);
-            if(write_sock(sock_fd, buffer) < 0){
-                return -1;
-            }
-        }
-    }
     if(close(fd) == -1){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
@@ -347,6 +342,27 @@ int server_releasedir(int sock_fd, char* args) {
     }
     free(dirfd_str);
     return 0;
+}
+
+int server_flush(int sock_fd, char* args){
+    int fd;
+    char* buffer;
+    char* fd_str = before_substring(&args, TOKEN);
+    sscanf(fd_str, "%d", &fd);
+
+    if(fsync(fd) == -1){
+        buffer = malloc(lenHelper(errno)+1);
+        sprintf(buffer, "%d", errno);
+    }else{
+        buffer = malloc(strlen("success")+1);
+        strcpy(buffer,"success");
+    }
+    if(write_sock(sock_fd, buffer) < 0){
+        return -1;
+    }
+    free(fd_str);
+    return 0;
+
 }
 
 int server_write(int sock_fd, char* args) {
@@ -385,9 +401,9 @@ int server_create(int sock_fd, char* args) {
     char* mode_str = before_substring(&args, TOKEN);
     
     int len = strlen(mode_str);
-    printf("MODE_STR lEN: %d\n", len);
+    //printf("MODE_STR lEN: %d\n", len);
     int file_fd;
-    printf("PATH: %s\n", path);
+    //printf("PATH: %s\n", path);
     char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
     char* buffer;
     strcpy(full_path, mount_path);
@@ -398,13 +414,13 @@ int server_create(int sock_fd, char* args) {
     
     file_fd = creat(full_path, mode);
     free(full_path);
-    printf("MODE: %u, file_fd: %d\n", mode, file_fd);
+    //printf("MODE: %u, file_fd: %d\n", mode, file_fd);
     if(file_fd == -1){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
     }else{
-        buffer = malloc(strlen("success")+1);
-        strcpy(buffer, "success");
+        buffer = malloc(strlen("success")+strlen(TOKEN)+lenHelper(file_fd)+1);
+        sprintf(buffer, "%s%s%d", "success", TOKEN, file_fd);
     }
     
     if(write_sock(sock_fd, buffer) < 0){
@@ -484,7 +500,12 @@ void* test(void *param){
         
     }
     else if(strcmp(token, "flush") == 0){
-        
+        if(server_flush(sock_fd, msg) != 0){
+            printf("Error in server flush\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);
     }
     else if(strcmp(token, "release") == 0){
         if(server_release(sock_fd, msg) != 0){
