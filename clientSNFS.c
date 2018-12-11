@@ -47,22 +47,22 @@ char* before_substring(char** buffer, char* substring){
         memset(start, 0, strlen(substring));
         if(*buffer[0] == '\0'){
             memset(*buffer, 0, 1);
+            *buffer = NULL;
         }
         return ret;
     }
 }
 
-int lenHelper(unsigned x) {
-    if (x >= 1000000000) return 10;
-    if (x >= 100000000)  return 9;
-    if (x >= 10000000)   return 8;
-    if (x >= 1000000)    return 7;
-    if (x >= 100000)     return 6;
-    if (x >= 10000)      return 5;
-    if (x >= 1000)       return 4;
-    if (x >= 100)        return 3;
-    if (x >= 10)         return 2;
-    return 1;
+int lenHelper(long x){
+    int totalDigits = 0;
+    if(x == 0){
+        return 1;
+    }
+    while(x!=0){
+        x = x/10;
+        totalDigits ++;
+    }
+    return totalDigits;
 }
 
 int connect_to_socket(){
@@ -150,9 +150,15 @@ int write_sock(int sock_fd, char* buffer){
 static int client_getattr(const char *path, struct stat *st){
     printf("In %s\n,Path: %s\n", __func__, path);
     int sock_fd;
+    int res;
     struct stat *server_st;
     void *buffer;
-    char *msg; 
+    void* data;
+    void *ptr;
+    char *msg;
+    ssize_t bytes_read;
+    ssize_t bytes_to_read;
+    ssize_t total_bytes;
     
     if(strcmp(path, "/.Trash") == 0 || strcmp(path, "/.Trash-1000") == 0){
          //   owner of file in question
@@ -189,19 +195,19 @@ static int client_getattr(const char *path, struct stat *st){
     strcat(msg, TOKEN);
     strcat(msg, path);
     
-    int res = write_sock(sock_fd, msg);
+    res = write_sock(sock_fd, msg);
     if(res == -1){
         printf("%s\n", strerror(errno));
         res = -errno;
         return res;
     }
     
-    ssize_t bytes_read;
-    ssize_t bytes_to_read = sizeof(struct stat);
-    ssize_t total_bytes = 0;
-    void* data = (void*)malloc(sizeof(struct stat));
+    
+    bytes_to_read = sizeof(struct stat);
+    total_bytes = 0;
+    data = (void*)malloc(sizeof(struct stat));
     buffer = malloc(sizeof(struct stat));
-    void *ptr = data;
+    ptr = data;
     while(total_bytes !=  bytes_to_read){
         
         if(ptr != data){
@@ -314,97 +320,163 @@ static int client_open(const char *path, struct fuse_file_info *fi){
     printf("In %s\n", __func__);
 
     int sock_fd;
+    int res;
+    unsigned int access;
+    char* result;
+    char* buf;
+    char* msg;
+    char* per;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
     }
     
-    char *msg = (char*)malloc(strlen("open")+strlen(TOKEN)+strlen(path)+1);
+    msg = (char*)malloc(strlen("open")+strlen(TOKEN)+strlen(path)+1);
     strcpy(msg, "open");
     strcat(msg, TOKEN);
     strcat(msg, path);
     
-    int res = write_sock(sock_fd, msg);
+    res = write_sock(sock_fd, msg);
     if(res == -1){
         printf("%s\n", strerror(errno));
-        res = -errno;
-        return res;
+        return -errno;
     }
-    
-    close(sock_fd);
 
-    return 0;
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
+    close(sock_fd);
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }else{
+        per = before_substring(&buf, TOKEN);
+        access = strtoul(per, NULL, 10);
+        fi->flags = access;
+    }
+    //free(actual_path);
+    free(result);
+    free(per);
+    return res;
+
 }
 
 static int client_read(const char *path, char *buffer, size_t size, off_t offset, struct fuse_file_info *fi){
     printf("In %s\n", __func__);
-    
+
     int sock_fd;
+    int res;
+    int sizeDigits;
+    int offsetDigits;
+    char* buf;
+    char* result;
+    char* msg;
+    char* str_size;
+    char* str_off;
+    char* data_read;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
     }
     
-    int sizeDigits = lenHelper(size);
-    int offsetDigits = lenHelper(offset);
-    char *str_size = (char*)malloc(sizeDigits+1);
-    char *str_off = (char*)malloc(offsetDigits+1);
-    snprintf(str_size, sizeDigits+1, "%lu", size);
-    snprintf(str_off, offsetDigits+1, "%lu", offset);
-    char *msg = (char*)malloc(strlen("read")+strlen(TOKEN)+strlen(path)+sizeDigits+offsetDigits+1);
-    strcpy(msg, "read");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
-    strcat(msg, TOKEN);
-    strcat(msg, str_size);
-    strcat(msg, TOKEN);
-    strcat(msg, str_off);
-    free(str_size);
-    free(str_off);
-
+    sizeDigits = lenHelper(size);
+    offsetDigits = lenHelper(offset);
+    //str_size = (char*)malloc(sizeDigits+1);
+    //str_off = (char*)malloc(offsetDigits+1);
+    //snprintf(str_size, sizeDigits+1, "%lu", size);
+    //snprintf(str_off, offsetDigits+1, "%lu", offset);
+    msg = (char*)malloc(strlen("read")+(3*strlen(TOKEN))+lenHelper(fi->fh)+sizeDigits+offsetDigits+1);
+    // strcpy(msg, "write");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    // strcat(msg, TOKEN);
+    // strcat(msg, str_size);
+    // strcat(msg, TOKEN);
+    // strcat(msg, str_off);
+    // free(str_size);
+    // free(str_off);
+    sprintf(msg, "%s%s%lu%s%lu%s%lu", "read", TOKEN, fi->fh, TOKEN, size, TOKEN, offset);
     
-    int res = write_sock(sock_fd, msg);
-    if(res == -1){
+    //read from socket
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
         printf("%s\n", strerror(errno));
-        res = -errno;
-        return res;
+        //free(actual_path);
+        return -errno;
     }
 
-    //read from socket
-    
-    
     close(sock_fd);
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }else{
+        data_read = before_substring(&buf, TOKEN);
+        strcpy(buffer, data_read);
+        free(data_read);
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
     return res;
-    //return 0;
-}
 
 static int client_flush(const char *path, struct fuse_file_info *fi){
     printf("In %s\n", __func__);
     
-    int sock_fd;
-    
-    if((sock_fd = connect_to_socket()) == -1){
-        printf("%s\n",strerror(errno));
-        return -errno;
-    }
-    
-    char *msg = (char*)malloc(strlen("flush")+strlen(TOKEN)+strlen(path)+1);
-    strcpy(msg, "flush");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
-    
-    int res = write_sock(sock_fd, msg);
-    if(res == -1){
-        printf("%s\n", strerror(errno));
-        res = -errno;
-        return res;
-    }
-    
-    //read from socket
-    close(sock_fd);
+    // int sock_fd;
+    // int res;
+    // char* result;
+    // char* msg;
+    // char* buf;
 
+    // if((sock_fd = connect_to_socket()) == -1){
+    //     printf("%s\n",strerror(errno));
+    //     return -errno;
+    // }
+    
+    // msg = (char*)malloc(strlen("flush")+strlen(TOKEN)+strlen(path)+1);
+    // strcpy(msg, "flush");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    
+    // res = write_sock(sock_fd, msg);
+    // if(res == -1){
+    //     printf("%s\n", strerror(errno));    
+    //     return -errno;
+    // }
+    
+    // //read from socket
+    // if((buf = read_sock(sock_fd)) == NULL){
+    //     close(sock_fd);
+    //     printf("%s\n", strerror(errno));
+    //     //free(actual_path);
+    //     return -errno;
+    // }
+
+    // close(sock_fd);
+    // result = before_substring(&buf, TOKEN);
+
+    // if(strcmp(result, "success") != 0){
+    //     errno = atoi(result);
+    //     printf("%s\n", strerror(errno));
+    //     res = -errno;
+    // }else{
+    //     res = 0;
+    // }
+
+    // free(result);
+    fi->flush = 1;
     return 0;
 }
 
@@ -412,18 +484,30 @@ static int client_release(const char *path, struct fuse_file_info *fi){
     printf("In %s\n", __func__);
     
     int sock_fd;
+    int res;
+    char* msg;
+    char* buf;
+    char* result;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
     }
     
-    char *msg = (char*)malloc(strlen("release")+strlen(TOKEN)+strlen(path)+1);
-    strcpy(msg, "release");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
+    msg = (char*)malloc(strlen("release")+(2*strlen(TOKEN))+strlen(path)+2);
+    sprintf(msg, "%s%s%lu%s%u", "release", TOKEN, fi->fh, TOKEN, fi->flush);
+    // strcpy(msg, "release");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    // strcat(msg, TOKEN);
+    if(fi->flush == 0){
+        sprintf(msg, "%s%s%lu%s%u", "release", TOKEN, fi->fh, TOKEN, fi->flush);
+
+    }else{
+        sprintf(msg, "%s%s%lu%s%u", "release", TOKEN, fi->fh, TOKEN, fi->flush);
+    }
     
-    int res = write_sock(sock_fd, msg);
+    res = write_sock(sock_fd, msg);
     if(res == -1){
         printf("%s\n", strerror(errno));
         res = -errno;
@@ -433,17 +517,42 @@ static int client_release(const char *path, struct fuse_file_info *fi){
     //read from socket
     
     close(sock_fd);
-    return 0;
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
+    
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }else{
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
+    fi->flush = 0;
+    fi->flags = 0;
+    return res;
 }
 
 static int client_opendir(const char *path, struct fuse_file_info *fi){
     printf("In %s\n", __func__);
     
     int sock_fd;
+    int res;
+    unsigned int access;
+    char* result;
     char *buf;
     char *per;
-    int res;
-    char *msg;
+    char* msg;
+    char* dirfd_str;
+    
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
@@ -469,15 +578,28 @@ static int client_opendir(const char *path, struct fuse_file_info *fi){
         return res;
     }
     
-    per = before_substring(&buf, TOKEN);
-    if(strcmp(per, "no") == 0){
-        errno = ENOENT;
-        res = -errno; 
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
     }else{
+        per = before_substring(&buf, TOKEN);
+        access = strtoul(per, NULL, 10);
+        fi->flags = access;
+        //long unsigned int he;
+        dirfd_str = before_substring(&buf, TOKEN);
+        sscanf(dirfd_str, "%lu", &(fi->fh));
+        //fi->fh  = he;
+        printf("FD: %lu", fi->fh);
+        fflush(stdout);
+        free(per);
+        free(dirfd_str);
         res = 0;
     }
-    
-    close(sock_fd);
+    //free(actual_path);
+    free(result);
     return res;
 
 }
@@ -497,10 +619,11 @@ static int client_readdir(const char *path, void *buffer, fuse_fill_dir_t filler
         return -errno;
     }
 
-    msg = (char*)malloc(strlen("readdir")+strlen(TOKEN)+strlen(path)+1);
-    strcpy(msg, "readdir");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
+    msg = (char*)malloc(strlen("readdir")+strlen(TOKEN)+lenHelper(fi->fh)+1);
+    sprintf(msg, "%s%s%lu", "readdir", TOKEN, fi->fh);
+    // strcpy(msg, "readdir");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
     
     res = write_sock(sock_fd, msg);
     if(res == -1){
@@ -532,44 +655,68 @@ static int client_readdir(const char *path, void *buffer, fuse_fill_dir_t filler
 
 static int client_releasedir(const char *path, struct fuse_file_info *fi){
     printf("In client_releasedir()\n");
-//    
-//    int sock_fd;
-//    
-//    if((sock_fd = connect_to_socket()) == -1){
-//        printf("%s\n",strerror(errno));
-//        return -errno;
-//    }
-//    
-//    char *msg = (char*)malloc(strlen("releasedir")+strlen(TOKEN)+strlen(path)+1);
-//    strcpy(msg, "releasedir");
-//    strcat(msg, TOKEN);
-//    strcat(msg, path);
-//    
-//    int res = write_sock(sock_fd, msg);
-//    if(res == -1){
-//        printf("%s\n", strerror(errno));
-//        res = -errno;
-//        return res;
-//    }
-//    
-//    close(sock_fd);
-    return 0;
-}
-
-static int client_mkdir(const char *path, mode_t mode){
-    printf("In client_mkdir()\n");
-    
+   
     int sock_fd;
+    char *buf;
+    char* result;
+    int res;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
     }
     
-    int modeDigits = lenHelper(mode);
-    char *str_mode = (char*)malloc(modeDigits+1);
+    char *msg = (char*)malloc(strlen("releasedir")+strlen(TOKEN)+lenHelper(fi->fh)+1);
+    //    strcpy(msg, "releasedir");
+    //    strcat(msg, TOKEN);
+    //    strcat(msg, path);
+    sprintf(msg, "%s%s%lu", "releasedir", TOKEN, fi->fh);
+    
+    res = write_sock(sock_fd, msg);
+    if(res == -1){
+        printf("%s\n", strerror(errno));
+        res = -errno;
+        return res;
+    }
+
+    if((buf = read_sock(sock_fd)) == NULL){
+        printf("%s\n", strerror(errno));
+        return -errno;
+    }
+
+    result = before_substring(&buf, TOKEN);
+    if(strcmp("success", result) != 0){
+        sscanf(result, "%d", &res);
+        errno = res;
+    }else{
+        res = 0;
+    }
+    close(sock_fd);
+    fi->flags = 0;
+    fi->fh = 0;
+    return res;
+}
+
+static int client_mkdir(const char *path, mode_t mode){
+    printf("In client_mkdir()\n");
+    
+    int sock_fd;
+    int res;
+    int modeDigits;
+    char* result;
+    char* msg;
+    char* buf;
+    char* str_mode;
+    
+    if((sock_fd = connect_to_socket()) == -1){
+        printf("%s\n",strerror(errno));
+        return -errno;
+    }
+    
+    modeDigits = lenHelper(mode);
+    str_mode = (char*)malloc(modeDigits+1);
     snprintf(str_mode, modeDigits+1, "%u", mode);
-    char *msg = (char*)malloc(strlen("mkdir")+strlen(TOKEN)+strlen(path)+modeDigits+1);
+    msg = (char*)malloc(strlen("mkdir")+strlen(TOKEN)+strlen(path)+modeDigits+1);
     strcpy(msg, "mkdir");
     strcat(msg, TOKEN);
     strcat(msg, path);
@@ -578,66 +725,146 @@ static int client_mkdir(const char *path, mode_t mode){
     free(str_mode);
     
     
-    int res = write_sock(sock_fd, msg);
+    res = write_sock(sock_fd, msg);
     if(res == -1){
         printf("%s\n", strerror(errno));
         res = -errno;
         return res;
     }
     
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
     close(sock_fd);
-    return 0;
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }else{
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
+    return res;
 }
 
 static int client_truncate(const char *path, off_t offset){
     printf("In %s\n", __func__);
 
     int sock_fd;
+    int res;
+    char* msg;
+    char* buf;
+    char* result;
+
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
     }
     
-    char *msg = (char*)malloc(strlen("truncate")+strlen(TOKEN)+strlen(path)+1);
-    strcpy(msg, "truncate");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
-    
+    msg = (char*)malloc(strlen("truncate")+(2*strlen(TOKEN))+strlen(path)+lenHelper(offset)+1);
+    // strcpy(msg, "truncate");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+
+    sprintf(msg, "%s%s%s%s%lu", "truncate", TOKEN, path, TOKEN, offset);
+
+    res = write_sock(sock_fd, msg);
+    if(res == -1){
+        printf("%s\n", strerror(errno));
+        res = -errno;
+        return res;
+    }
+
+    //read response
+
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
     close(sock_fd);
-    return 0;
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }else{
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
+    return res;
 }
 
 static int client_write(const char *path, const char *buffer, size_t size, off_t offset, struct fuse_file_info *fi){
     printf("In %s\n", __func__);
 
     int sock_fd;
+    int res;
+    int sizeDigits;
+    int offsetDigits;
+    char* buf;
+    char* result;
+    char* msg;
+    char* str_size;
+    char* str_off;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
         return -errno;
     }
     
-    int sizeDigits = lenHelper(size);
-    int offsetDigits = lenHelper(offset);
-    char *str_size = (char*)malloc(sizeDigits+1);
-    char *str_off = (char*)malloc(offsetDigits+1);
-    snprintf(str_size, sizeDigits+1, "%lu", size);
-    snprintf(str_off, offsetDigits+1, "%lu", offset);
-    char *msg = (char*)malloc(strlen("write")+strlen(TOKEN)+strlen(path)+sizeDigits+offsetDigits+1);
-    strcpy(msg, "write");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
-    strcat(msg, TOKEN);
-    strcat(msg, str_size);
-    strcat(msg, TOKEN);
-    strcat(msg, str_off);
-    free(str_size);
-    free(str_off);
+    sizeDigits = lenHelper(size);
+    offsetDigits = lenHelper(offset);
+    //str_size = (char*)malloc(sizeDigits+1);
+    //str_off = (char*)malloc(offsetDigits+1);
+    //snprintf(str_size, sizeDigits+1, "%lu", size);
+    //snprintf(str_off, offsetDigits+1, "%lu", offset);
+    msg = (char*)malloc(strlen("write")+strlen(buffer)+(4*strlen(TOKEN))+lenHelper(fi->fh)+sizeDigits+offsetDigits+1);
+    // strcpy(msg, "write");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    // strcat(msg, TOKEN);
+    // strcat(msg, str_size);
+    // strcat(msg, TOKEN);
+    // strcat(msg, str_off);
+    // free(str_size);
+    // free(str_off);
+    sprintf(msg, "%s%s%s%s%lu%s%lu%s%lu", "write", TOKEN, buffer, TOKEN, fi->fh, TOKEN, size, TOKEN, offset);
     
     //read from socket
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
     close(sock_fd);
-    return 0;
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }else{
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
+    return res;
+
 }
 
 
@@ -726,22 +953,7 @@ int main(int argc, char **argv){
         exit(1);
     }
     free(mount_path);
-    
-    
-//    int sock_fd;
-//    if((sock_fd = connect_to_socket()) == -1){
-//        printf("%s\n",strerror(errno));
-//        exit(1);
-//    }
-    
-//    char *msg = (char *)malloc(strlen("hey what's going on fam?")+1);
-//    strcpy(msg, "hey what's going on fam?");
-//    write_sock(sock_fd, msg);
-//    sleep(5);
-//    close(sock_fd);
-//    printf("Token: %s\n", TOKEN);
-//    close(sock_fd);
-//    printf("Token: %s\n", TOKEN);
+
     struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
     fuse_opt_add_arg(&args, argv[0]);
     fuse_opt_add_arg(&args, "-f");
