@@ -144,7 +144,7 @@ int server_getattr(int sock_fd, char* args){
     return 0;
 }
 
-int server_open(int sock_fd, char* args, int oflags) {
+int server_open(int sock_fd, char* args) {
     char* path = before_substring(&args, TOKEN);
     if (access(path, F_OK) != 0) {
         return -1;
@@ -237,7 +237,18 @@ int server_readdir(int sock_fd, char* args) {
 }
 
 int server_releasedir(void* args) {
-
+    printf("Args: %s\n", args);
+    char* path = before_substring(&args, TOKEN);
+    printf("PATH: %s\n", path);
+    char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
+    char* buffer = NULL;
+    
+    strcpy(full_path, mount_path);
+    strcat(full_path, path);
+    printf("Full Path: %s\n", full_path);
+    DIR *dp;
+    dp = closedir(full_path);
+    
     return 0;
 }
 
@@ -337,7 +348,12 @@ void* test(void *param){
         pthread_exit(NULL);
     }
     else if(strcmp(token, "open") == 0){
-        
+        if(server_open(sock_fd, msg) != 0){
+            printf("Error in server open\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);
     }
     else if(strcmp(token, "flush") == 0){
         
@@ -360,7 +376,12 @@ void* test(void *param){
         pthread_exit(NULL);
     }
     else if(strcmp(token, "mkdir") == 0){
-        
+        if(server_mkdir(sock_fd, msg) != 0){
+            printf("Error in server mkdir\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL);
     }
     else if(strcmp(token, "readdir") == 0){
         if(server_readdir(sock_fd, msg) != 0){
@@ -371,7 +392,12 @@ void* test(void *param){
         pthread_exit(NULL);     
     }
     else if(strcmp(token, "releasedir") == 0){
-        
+        if(server_releasedir(sock_fd, msg) != 0){
+            printf("Error in server releasedir\n");
+        }
+        close(sock_fd);
+        free(token);
+        pthread_exit(NULL); 
     }
     else if(strcmp(token, "write") == 0){
         
@@ -527,10 +553,3 @@ int main(int argc, char **argv){
     // int x = server_create(0, args);
     return 0;
 }
-
-
-
-
-
-
-
