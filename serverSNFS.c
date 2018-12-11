@@ -180,6 +180,7 @@ int server_read(int sock_fd, char* args) {
     int fd;
     off_t offset;
     size_t size;
+    ssize_t bytes_read = 0;
     char* buffer;
     char* data;
     char* fd_str = before_substring(&args, TOKEN);
@@ -191,13 +192,13 @@ int server_read(int sock_fd, char* args) {
     sscanf(size_str, "%lu", &size);
 
     data = malloc(size+1);
-    if(pread(fd, (void*)data, size, offset) == -1){
+    if((bytes_read = pread(fd, (void*)data, size, offset)) == -1){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
     }else{
         data[size] = '\0';
-        buffer = malloc(strlen("success")+strlen(TOKEN)+strlen(data)+1);
-        sprintf(buffer, "%s%s%s", "success", TOKEN, data);
+        buffer = malloc(strlen("success")+(2*strlen(TOKEN))+strlen(data)+lenHelper(bytes_read)+1);
+        sprintf(buffer, "%s%s%s%s%ld", "success", TOKEN, data, TOKEN, bytes_read);
     }
     if(write_sock(sock_fd, buffer) < 0){
         return -1;
@@ -369,6 +370,7 @@ int server_write(int sock_fd, char* args) {
     int fd;
     off_t offset;
     size_t size;
+    ssize_t bytes_read = 0;
     char* buffer;
     char* data = before_substring(&args, TOKEN);
     char* fd_str = before_substring(&args, TOKEN);
@@ -379,12 +381,13 @@ int server_write(int sock_fd, char* args) {
     sscanf(offset_str, "%lu", &offset);
     sscanf(size_str, "%lu", &size);
 
-    if(pwrite(fd, (void*)data, size, offset) == -1){
+    if((bytes_read = pwrite(fd, (void*)data, size, offset)) == -1){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
     }else{
-        buffer = malloc(strlen("success")+1);
-        strcpy(buffer,"success");
+        buffer = malloc(strlen("success")+strlen(TOKEN)+lenHelper(bytes_read)+1);
+        //strcpy(buffer,"success");
+        sprintf(buffer, "%s%s%ld", "success", TOKEN, bytes_read);
     }
     if(write_sock(sock_fd, buffer) < 0){
         return -1;

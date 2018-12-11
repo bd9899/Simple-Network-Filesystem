@@ -380,12 +380,14 @@ static int client_read(const char *path, char *buffer, size_t size, off_t offset
     int res;
     int sizeDigits;
     int offsetDigits;
+    ssize_t bytes_read;
     char* buf;
     char* result;
     char* msg;
     char* str_size;
     char* str_off;
     char* data_read;
+    char* bytes_read_str;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
@@ -432,13 +434,15 @@ static int client_read(const char *path, char *buffer, size_t size, off_t offset
         res = -errno;
     }else{
         data_read = before_substring(&buf, TOKEN);
+        bytes_read_str = before_substring(&buf, TOKEN);
+        sscanf(bytes_read_str, "%ld", &bytes_read);
         strcpy(buffer, data_read);
         free(data_read);
-        res = 0;
+        free(bytes_read_str);
     }
     //free(actual_path);
     free(result);
-    return res;
+    return bytes_read;
 }
 
 static int client_flush(const char *path, struct fuse_file_info *fi){
@@ -815,11 +819,13 @@ static int client_write(const char *path, const char *buffer, size_t size, off_t
     int res;
     int sizeDigits;
     int offsetDigits;
+    ssize_t bytes_read;
     char* buf;
     char* result;
     char* msg;
     char* str_size;
     char* str_off;
+    char* bytes_read_str;
     
     if((sock_fd = connect_to_socket()) == -1){
         printf("%s\n",strerror(errno));
@@ -865,11 +871,13 @@ static int client_write(const char *path, const char *buffer, size_t size, off_t
         printf("%s\n", strerror(errno));
         res = -errno;
     }else{
-        res = 0;
+        bytes_read_str = before_substring(&buf,TOKEN);
+        sscanf(bytes_read_str, "%ld", &bytes_read);
+        free(bytes_read_str);
     }
     //free(actual_path);
     free(result);
-    return res;
+    return bytes_read;
 
 }
 
