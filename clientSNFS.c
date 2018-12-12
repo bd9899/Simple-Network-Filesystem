@@ -94,7 +94,7 @@ int connect_to_socket(){
     if(address != NULL){
         freeaddrinfo(address);
     }
-    printf("Successfully connected to socket\n");
+    //printf("Successfully connected to socket\n");
     return sock_fd;
 }
 
@@ -105,17 +105,17 @@ char* read_sock(int sock_fd){
     char *msg = NULL;
     char *buffer = malloc(2);
     while((res = read(sock_fd, buffer, 1))){
-        printf("res: %lu\n", res);
+        //printf("res: %lu\n", res);
         if (res == -1){
             free(buffer);
             if(msg != NULL){
                 free(msg);
             }
-            printf("RES is -1\n");
+            //printf("RES is -1\n");
             return NULL;
         }
         buffer[res] = '\0';
-        printf("Buffer: %s-hi-\n", buffer);
+        //printf("Buffer: %s-hi-\n", buffer);
         if(buffer[0] == buffer[res]){
             break;
         }
@@ -130,7 +130,7 @@ char* read_sock(int sock_fd){
             strcat(msg, (char*)buffer);
         }
     }
-    printf("msg: %s\n",msg);
+    //printf("msg: %s\n",msg);
     free(buffer);
     return msg; 
 }
@@ -141,7 +141,7 @@ int write_sock(int sock_fd, char* buffer){
     strcpy(newBuffer, buffer);
     strcat(newBuffer, TOKEN);
     free(buffer);
-    printf("BUFFER: %s\n", newBuffer);
+    //printf("BUFFER: %s\n", newBuffer);
     res = write(sock_fd, newBuffer, strlen(newBuffer)+1);
     fsync(sock_fd);
     return res;
@@ -219,7 +219,7 @@ static int client_getattr(const char *path, struct stat *st){
             return res;
         }
         total_bytes += bytes_read;
-        printf("Bytes Read: %lu\nTotal Bytes: %lu\n", bytes_read, total_bytes);
+        //printf("Bytes Read: %lu\nTotal Bytes: %lu\n", bytes_read, total_bytes);
         memcpy(ptr, buffer, bytes_read);
     }
     
@@ -244,7 +244,7 @@ static int client_getattr(const char *path, struct stat *st){
     st->st_atime = server_st->st_atime;
     st->st_mtime = server_st->st_mtime;
     st->st_ctime = server_st->st_ctime;
-    printf("UID: %u\n",st->st_uid);
+    //printf("UID: %u\n",st->st_uid);
     // if(strcmp(path, "/") == 0){
     //     st->st_nlink = st->st_nlink + 1;
     // }
@@ -252,7 +252,7 @@ static int client_getattr(const char *path, struct stat *st){
     free(data);
     free(buffer);
     
-    printf("LEAVING\n");
+    //printf("LEAVING\n");
     return 0;
 }
 
@@ -271,7 +271,7 @@ static int client_create(const char *path, mode_t mode, struct fuse_file_info *f
     }
     
     int modeDigits = lenHelper(mode);
-    printf("mode digits: %d\n", modeDigits);
+    //printf("mode digits: %d\n", modeDigits);
 
     char *str_mode = (char*)malloc(modeDigits+1);
     sprintf(str_mode, "%u", mode);
@@ -284,7 +284,7 @@ static int client_create(const char *path, mode_t mode, struct fuse_file_info *f
     strcat(msg, str_mode);
     //free(str_mode);
     
-    printf("CREATE MSG: %s\n", msg);
+    //printf("CREATE MSG: %s\n", msg);
     fflush(stdout);
     int res = write_sock(sock_fd, msg);
     if(res == -1){
@@ -703,7 +703,7 @@ static int client_releasedir(const char *path, struct fuse_file_info *fi){
 }
 
 static int client_mkdir(const char *path, mode_t mode){
-    printf("In client_mkdir()\n");
+ //   printf("In %s\n", __func__);
     
     int sock_fd;
     int res;
@@ -711,35 +711,36 @@ static int client_mkdir(const char *path, mode_t mode){
     char* result;
     char* msg;
     char* buf;
-    char* str_mode;
+    //char* str_mode;
     
     if((sock_fd = connect_to_socket()) == -1){
-        printf("%s\n",strerror(errno));
+       // printf("%s\n",strerror(errno));
         return -errno;
     }
     
     modeDigits = lenHelper(mode);
-    str_mode = (char*)malloc(modeDigits+1);
-    snprintf(str_mode, modeDigits+1, "%u", mode);
-    msg = (char*)malloc(strlen("mkdir")+strlen(TOKEN)+strlen(path)+modeDigits+1);
-    strcpy(msg, "mkdir");
-    strcat(msg, TOKEN);
-    strcat(msg, path);
-    strcat(msg, TOKEN);
-    strcat(msg, str_mode);
-    free(str_mode);
+    //str_mode = (char*)malloc(modeDigits+1);
+    //sprintf(str_mode, modeDigits+1, "%u", mode);
+    msg = (char*)malloc(strlen("mkdir")+(2*strlen(TOKEN))+strlen(path)+modeDigits+1);
+    sprintf(msg, "%s%s%s%s%u", "mkdir", TOKEN, path, TOKEN, mode);
+    // strcpy(msg, "mkdir");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    // strcat(msg, TOKEN);
+    // strcat(msg, str_mode);
+    //free(str_mode);
     
     
     res = write_sock(sock_fd, msg);
     if(res == -1){
-        printf("%s\n", strerror(errno));
+       // printf("%s\n", strerror(errno));
         res = -errno;
         return res;
     }
     
     if((buf = read_sock(sock_fd)) == NULL){
         close(sock_fd);
-        printf("%s\n", strerror(errno));
+       // printf("%s\n", strerror(errno));
         //free(actual_path);
         return -errno;
     }
@@ -881,6 +882,102 @@ static int client_write(const char *path, const char *buffer, size_t size, off_t
 
 }
 
+static int client_unlink(const char* path){
+    int sock_fd;
+    int res;
+    char* result;
+    char* buf;
+    char* msg;
+
+    
+    if((sock_fd = connect_to_socket()) == -1){
+        printf("%s\n",strerror(errno));
+        return -errno;
+    }
+    
+    msg = (char*)malloc(strlen("unlink")+strlen(TOKEN)+strlen(path)+1);
+    sprintf(msg, "%s%s%s", "unlink", TOKEN, path);
+    // strcpy(msg, "open");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    
+    res = write_sock(sock_fd, msg);
+    if(res == -1){
+        printf("%s\n", strerror(errno));
+        return -errno;
+    }
+
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
+    close(sock_fd);
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }
+    else{
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
+    return res;
+}
+
+static int client_rmdir(const char* path){
+    int sock_fd;
+    int res;
+    char* result;
+    char* buf;
+    char* msg;
+
+    
+    if((sock_fd = connect_to_socket()) == -1){
+        printf("%s\n",strerror(errno));
+        return -errno;
+    }
+    
+    msg = (char*)malloc(strlen("rmdir")+strlen(TOKEN)+strlen(path)+1);
+    sprintf(msg, "%s%s%s", "rmdir", TOKEN, path);
+    // strcpy(msg, "open");
+    // strcat(msg, TOKEN);
+    // strcat(msg, path);
+    
+    res = write_sock(sock_fd, msg);
+    if(res == -1){
+        printf("%s\n", strerror(errno));
+        return -errno;
+    }
+
+    if((buf = read_sock(sock_fd)) == NULL){
+        close(sock_fd);
+        printf("%s\n", strerror(errno));
+        //free(actual_path);
+        return -errno;
+    }
+
+    close(sock_fd);
+    result = before_substring(&buf, TOKEN);
+
+    if(strcmp(result, "success") != 0){
+        errno = atoi(result);
+        printf("%s\n", strerror(errno));
+        res = -errno;
+    }
+    else{
+        res = 0;
+    }
+    //free(actual_path);
+    free(result);
+    return res;
+}
+
 
 //have to return -errno for all these implementations
 static struct fuse_operations client_oper = {
@@ -895,7 +992,9 @@ static struct fuse_operations client_oper = {
   .mkdir = client_mkdir,
   .readdir = client_readdir,
   .releasedir = client_releasedir,
-  .write = client_write
+  .write = client_write,
+  .unlink = client_unlink,
+  .rmdir = client_rmdir
 };
 
 
@@ -970,9 +1069,9 @@ int main(int argc, char **argv){
 
     struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
     fuse_opt_add_arg(&args, argv[0]);
-    fuse_opt_add_arg(&args, "-f");
+    //fuse_opt_add_arg(&args, "-f");
     fuse_opt_add_arg(&args, argv[6]);
     
-    printf("Mount point: %s\n", argv[6]);
+    //printf("Mount point: %s\n", argv[6]);
     return fuse_main(args.argc, args.argv, &client_oper, NULL);
 }
