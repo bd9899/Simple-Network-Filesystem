@@ -883,6 +883,7 @@ static int client_write(const char *path, const char *buffer, size_t size, off_t
 }
 
 static int client_unlink(const char* path){
+    printf("In %s\n", __func__);
     int sock_fd;
     int res;
     char* result;
@@ -931,6 +932,7 @@ static int client_unlink(const char* path){
 }
 
 static int client_rmdir(const char* path){
+    printf("In %s\n", __func__);
     int sock_fd;
     int res;
     char* result;
@@ -1069,9 +1071,12 @@ int main(int argc, char **argv){
 
     struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
     fuse_opt_add_arg(&args, argv[0]);
-    fuse_opt_add_arg(&args, "-f");
+    //fuse_opt_add_arg(&args, "-f");
+    fuse_opt_add_arg(&args, "-o");
+    fuse_opt_add_arg(&args, "nonempty");
     fuse_opt_add_arg(&args, argv[6]);
     
-    printf("Terminate by pressing CTRL+C and unmount using fusermount -u [mount_path].\nYou can only unmount if you are not in the mount directory\n");
+    printf("Unmount using fusermount -u [mount_path].\nYou can only unmount if you are not in the mount directory\n");
+    printf("Mounting...\n");
     return fuse_main(args.argc, args.argv, &client_oper, NULL);
 }

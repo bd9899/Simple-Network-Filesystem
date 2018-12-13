@@ -129,7 +129,7 @@ int server_getattr(int sock_fd, char* args){
     strcat(full_path, path);
     //printf("Full Path: %s\n", full_path);
     if(stat(full_path, st) != 0){
-        printf("Stat Failed\n");
+        //printf("Stat Failed\n");
         st->st_dev = errno;
         st->st_gid = '!';
     }    
