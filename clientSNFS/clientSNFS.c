@@ -453,44 +453,47 @@ static int client_flush(const char *path, struct fuse_file_info *fi){
     char* result;
     char* msg;
     char* buf;
-
-    if((sock_fd = connect_to_socket()) == -1){
-        printf("%s\n",strerror(errno));
-        return -errno;
-    }
     
-    msg = (char*)malloc(strlen("flush")+strlen(TOKEN)+lenHelper(fi->fh)+1);
-    // strcpy(msg, "flush");
-    // strcat(msg, TOKEN);
-    // strcat(msg, path);
-    sprintf(msg, "%s%s%lu", "flush", TOKEN, fi->fh);
+    if(fi->flush){
+        if((sock_fd = connect_to_socket()) == -1){
+            printf("%s\n",strerror(errno));
+            return -errno;
+        }
+        
+        msg = (char*)malloc(strlen("flush")+strlen(TOKEN)+lenHelper(fi->fh)+1);
+        // strcpy(msg, "flush");
+        // strcat(msg, TOKEN);
+        // strcat(msg, path);
+        sprintf(msg, "%s%s%lu", "flush", TOKEN, fi->fh);
 
-    res = write_sock(sock_fd, msg);
-    if(res == -1){
-        printf("%s\n", strerror(errno));    
-        return -errno;
-    }
-    
-    //read from socket
-    if((buf = read_sock(sock_fd)) == NULL){
+        res = write_sock(sock_fd, msg);
+        if(res == -1){
+            printf("%s\n", strerror(errno));    
+            return -errno;
+        }
+        
+        //read from socket
+        if((buf = read_sock(sock_fd)) == NULL){
+            close(sock_fd);
+            printf("%s\n", strerror(errno));
+            //free(actual_path);
+            return -errno;
+        }
+
         close(sock_fd);
-        printf("%s\n", strerror(errno));
-        //free(actual_path);
-        return -errno;
+        result = before_substring(&buf, TOKEN);
+
+        if(strcmp(result, "success") != 0){
+            errno = atoi(result);
+            printf("%s\n", strerror(errno));
+            res = -errno;
+        }else{
+            res = 0;
+        }
+
+        free(result);
+        return res;
     }
-
-    close(sock_fd);
-    result = before_substring(&buf, TOKEN);
-
-    if(strcmp(result, "success") != 0){
-        errno = atoi(result);
-        printf("%s\n", strerror(errno));
-        res = -errno;
-    }else{
-        res = 0;
-    }
-
-    free(result);
     return 0;
 }
 
@@ -703,7 +706,7 @@ static int client_releasedir(const char *path, struct fuse_file_info *fi){
 }
 
 static int client_mkdir(const char *path, mode_t mode){
- //   printf("In %s\n", __func__);
+    printf("In %s\n", __func__);
     
     int sock_fd;
     int res;

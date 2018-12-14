@@ -331,7 +331,8 @@ int server_releasedir(int sock_fd, char* args) {
     // printf("PATH: %s\n", path);
     // char* full_path = (char*)malloc(strlen(mount_path)+strlen(path)+1);
     char* buffer;
-    if(close(fd) == -1){
+    DIR* dstream = fdopendir(fd); 
+    if(closedir(dstream) == -1){
         buffer = malloc(lenHelper(errno)+1);
         sprintf(buffer, "%d", errno);
     }else{
@@ -744,7 +745,7 @@ int main(int argc, char **argv){
 
 
 
-    if (listen(server_fd, 10) != 0) {//10 is queue size for waiting connections
+    if (listen(server_fd, 10) != 0) {//100 is queue size for waiting connections
     	printf("%s\n", strerror(errno));
     	exit(1);
     }
