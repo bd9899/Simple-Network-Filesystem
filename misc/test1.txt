@@ -1,0 +1,9 @@
+test 1 (1 client):
+	mkdir folder1
+	mkdir folder2
+	echo "hello" > folder1/file1.txt
+	cp folder1/file.txt folder2
+	cd folder2
+	head file1.txt
+	cd ..
+	rm -r folder2
